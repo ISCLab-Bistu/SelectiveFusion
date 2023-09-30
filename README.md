@@ -2,7 +2,6 @@
 
 ## Introduction
 
-By Xufan Miao, Mingxin Yu
 
 
 
