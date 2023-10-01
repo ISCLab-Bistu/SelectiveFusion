@@ -45,7 +45,7 @@ Evaluate `roadscene` and `tno_vot` using the same method.
 
 4. Weight
 
-Our model weight is included in [log](https://github.com/ISCLab-Bistu/SCFusion/tree/main/log).
+Our model's weight is included in [log](https://github.com/ISCLab-Bistu/SCFusion/tree/main/log).
 
 
 ## Acknowledgement
