@@ -17,7 +17,9 @@ import utils
 from net import NestFuse_light2_nodense, Fusion_network
 from args_fusion import args
 import pytorch_msssim
-
+from fusion_block.utils import NCC
+from fusion_block.utils import euclidean_distance as ED
+from fusion_block.utils import SCDLoss
 
 
 EPSILON = 1e-5
@@ -51,16 +53,18 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 	output_nc = nc
 	nb_filter = [64, 112, 160, 208, 256]
 	f_type = 'res'
-
+	SCD = SCDLoss()
 
 	with torch.no_grad():
 		deepsupervision = False
 		nest_model = NestFuse_light2_nodense(nb_filter, input_nc, output_nc, deepsupervision)
-		model_path = args.resume_onestage
+		model_path = args.resume_nestfuse
 		# load auto-encoder network
 		print('Resuming, initializing auto-encoder using weight from {}.'.format(model_path))
 		nest_model.load_state_dict(torch.load(model_path))
 		nest_model.eval()
+
+
 
 	# fusion network
 	fusion_model = Fusion_network(nb_filter, f_type)
@@ -70,6 +74,7 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 	optimizer = Adam(fusion_model.parameters(), args.lr)
 	mse_loss = torch.nn.MSELoss()
 	ssim_loss = pytorch_msssim.msssim
+
 
 	if args.cuda:
 		nest_model.cuda()
@@ -96,13 +101,13 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 		os.mkdir(temp_path_loss_w)
 
 	Loss_feature = []
-	# Loss_balance = []
+	Loss_balance = []
 	Loss_ssim = []
 	Loss_all = []
 	count_loss = 0
 	all_ssim_loss = 0.
 	all_fea_loss = 0.
-	# all_balance_loss = 0.
+	all_balance_loss = 0.
 
 	# alpha_weight = torch.nn.Parameter(torch.tensor(alpha, dtype=torch.float32))
 	# optimizer_alpha = torch.optim.Adam([alpha_weight], lr=0.1)
@@ -145,7 +150,7 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 			######################### LOSS FUNCTION #########################
 			loss1_value = 0.
 			loss2_value = 0.
-			loss_balance_value = 0.
+			loss3_value = 0.
 			for output in outputs:
 				output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
 				output = output * 255
@@ -173,44 +178,54 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 					g2_vi_temp = g2_vi_fea[ii]
 					g2_fuse_temp = g2_fuse_fea[ii]
 					(bt, cht, ht, wt) = g2_ir_temp.size()
+
+
 					loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
 					# loss_balance_value += w_fea[ii] * F.l1_loss(g2_fuse_temp, torch.max(g2_ir_temp, g2_vi_temp))
 					# temp_loss = w_fea[ii] * NCC(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
 					# loss_balance_value += temp_loss
 					# temp_loss2 = w_ed[ii] * ED(g2_fuse_temp, torch.max(g2_ir_temp, g2_vi_temp))
 
+					perceptual_attention_loss = torch.abs(g2_fuse_temp - torch.max(g2_ir_temp, g2_vi_temp))
+					perceptual_attention_loss = torch.mean(perceptual_attention_loss)
+					loss3_value += perceptual_attention_loss
+					complementary_loss = torch.abs(g2_ir_temp - g2_vi_temp)  # 计算红外和可见光特征在某一层的互补性
+					complementary_loss = torch.mean(complementary_loss)  # 取平均作为损失项
+					loss3_value += complementary_loss
 
 
 			loss1_value /= len(outputs)
 			loss2_value /= len(outputs)
+			loss3_value *= 0.1
+			loss3_value /= len(outputs)
 			# loss_balance_value /= len(outputs)
 
 			# total loss
-			total_loss = loss1_value + loss2_value
+			total_loss = loss1_value + loss2_value + loss3_value
 			total_loss.backward()
 			optimizer.step()
 
 			all_fea_loss += loss2_value.item() # 
 			all_ssim_loss += loss1_value.item() #
-			# all_balance_loss += loss_balance_value.item()
+			all_balance_loss += loss3_value.item()
 
 			if (batch + 1) % args.log_interval == 0:
-				mesg = "{}\tAlpha: {}\tW-IR: {}\tW-VI: {}\tEpoch {}:\t[{}/{}]\tssim loss : {:.6f}\tfea loss : {:.6f}\ttotal : {:.6f}".format(
+				mesg = "{}\tAlpha: {}\tW-IR: {}\tW-VI: {}\tEpoch {}:\t[{}/{}]\tssim loss : {:.6f}\tfea loss : {:.6f}\tbalance loss : {:.6f}\ttotal : {:.6f}".format(
 					time.ctime(), alpha, w1, w2, e + 1, count, batches,
 								  all_ssim_loss / args.log_interval,
 								  all_fea_loss / args.log_interval,
-								  # all_balance_loss / args.log_interval,
+								  all_balance_loss / args.log_interval,
 								  (all_fea_loss + all_ssim_loss) / args.log_interval
 				)
 				tbar.set_description(mesg)
 				Loss_ssim.append( all_ssim_loss / args.log_interval)
 				Loss_feature.append(all_fea_loss / args.log_interval)
-				# Loss_balance.append(all_balance_loss / args.log_interval)
+				Loss_balance.append(all_balance_loss / args.log_interval)
 				Loss_all.append((all_fea_loss + all_ssim_loss) / args.log_interval)
 				count_loss = count_loss + 1
 				all_ssim_loss = 0.
 				all_fea_loss = 0.
-				# all_balance_loss = 0.
+				all_balance_loss = 0.
 
 			if (batch + 1) % (200 * args.log_interval) == 0:
 				# save model
