@@ -188,7 +188,7 @@ def train(original_imgs_path, img_flag, alpha, w1, w2):
 
 					perceptual_attention_loss = torch.abs(g2_fuse_temp - torch.max(g2_ir_temp, g2_vi_temp))
 					perceptual_attention_loss = torch.mean(perceptual_attention_loss)
-					loss3_value += perceptual_attention_loss
+					loss2_value += perceptual_attention_loss
 					complementary_loss = torch.abs(g2_ir_temp - g2_vi_temp)  # 计算红外和可见光特征在某一层的互补性
 					complementary_loss = torch.mean(complementary_loss)  # 取平均作为损失项
 					loss3_value += complementary_loss
