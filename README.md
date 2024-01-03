@@ -32,7 +32,7 @@ Run [train_fusionnet](https://github.com/miaoxufan/SCFusion/blob/main/train_fusi
 
 The testing datasets are included in [images](https://github.com/miaoxufan/SCFusion/tree/main/images).
 
-The testing results are included in [output_images](https://github.com/miaoxufan/SCFusion/tree/main/ouput_image).
+The testing results are included in [output_images].
 
 For `TNO21`,modify the `path_fusion` and `fusion_name` parameters, and then run the script file [plot_images/tno21](https://github.com/miaoxufan/SCFusion/blob/main/plot_images/tno21.py).
 
